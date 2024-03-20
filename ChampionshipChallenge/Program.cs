@@ -1,53 +1,61 @@
-﻿namespace ChampionshipChallenge;
-public class Program
+﻿using ChampionshipChallenge.Interfaces;
+using ChampionshipChallenge.Models;
+using ChampionshipChallenge.Services;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using System;
+using System.Collections.Generic;
+using System.IO;
+
+namespace ChampionshipChallenge
 {
-    static void Main()
+    public class Program
     {
-        List<string> matchList = File.ReadAllLines("Matches.txt").ToList();
-        Dictionary<string, int> scoresDic = new Dictionary<string, int>();
+        private static ILogger<Program> _logger;
 
-        foreach (string match in matchList)
+        public Program(ILogger<Program> logger)
         {
-            string[] matchScores = match.Split(',');
-            string team1 = matchScores[0].Split()[0];
-            string team2 = matchScores[1].Split()[0];
-            int t1Score = int.Parse(matchScores[0].Split()[1]);
-            int t2Score = int.Parse(matchScores[1].Split()[1]);
+            _logger = logger;
+        }
+        static void Main()
+        {
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                .Build();
 
-            if (t1Score > t2Score)
+            string filePath = configuration["FilePath"];
+
+            try
             {
-                UpdateTeamScore(scoresDic, team1, 3);
-                UpdateTeamScore(scoresDic, team2, 0);
+                var services = CreateServices();
+
+                var validationService = services.GetRequiredService<IValidationService>();
+                List<Match> matches = validationService.ReadMatchesFromFile(filePath);
+
+                var championship = services.GetRequiredService<IChampionshipService>();
+                championship.ProcessMatches(matches);
+                championship.DisplayScores();
             }
-            else if (t1Score < t2Score)
+            catch (Exception ex)
             {
-                UpdateTeamScore(scoresDic, team1, 0);
-                UpdateTeamScore(scoresDic, team2, 3);
-            }
-            else
-            {
-                UpdateTeamScore(scoresDic, team1, 1);
-                UpdateTeamScore(scoresDic, team2, 1);
+                _logger.LogError($"An error occurred: {ex.Message}");
             }
         }
 
-        var sortedTeams = scoresDic.OrderByDescending(x => x.Value);
+        public static ServiceProvider CreateServices()
+        {
+            var serviceProvider = new ServiceCollection().
+                AddLogging(options =>
+                {
+                    options.ClearProviders();
+                    options.AddConsole();
+                })
+                .AddSingleton<IChampionshipService, ChampionshipService>()
+                .AddSingleton<IValidationService, ValidationService>()
+                .BuildServiceProvider();    
 
-        foreach (var team in sortedTeams)
-        {
-            Console.WriteLine($"{team.Key}: {team.Value} points");
-        }
-    }
-
-    static void UpdateTeamScore(Dictionary<string, int> teamScores, string team, int points)
-    {
-        if (teamScores.ContainsKey(team))
-        {
-            teamScores[team] += points;
-        }
-        else
-        {
-            teamScores[team] = points;
+            return serviceProvider;
         }
     }
 }
